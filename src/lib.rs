@@ -3,14 +3,14 @@
 
 
 /**
-A PCF font
+A PSF font
 
-Use [parse](Pcf::parse) to create one, [get_glyph_pixels](Pcf::get_glyph_pixels) to get a glyph by index,
-and [iter_unicode_entries](Pcf::iter_unicode_entries) to get a glyph index by unicode character.
-PCF stores ASCII glyphs at the corresponding index, so you can retrieve ASCII characters without calling
-[iter_unicode_entries](Pcf::iter_unicode_entries) by giving the ASCII number to [get_glyph_pixels](Pcf::get_glyph_pixels) directly.
+Use [parse](Psf::parse) to create one, [get_glyph_pixels](Psf::get_glyph_pixels) to get a glyph by index,
+and [iter_unicode_entries](Psf::iter_unicode_entries) to get a glyph index by unicode character.
+PSF stores ASCII glyphs at the corresponding index, so you can retrieve ASCII characters without calling
+[iter_unicode_entries](Psf::iter_unicode_entries) by giving the ASCII number to [get_glyph_pixels](Psf::get_glyph_pixels) directly.
 */
-pub struct Pcf<'a> {
+pub struct Psf<'a> {
 	pub glyph_byte_length: usize,
 	pub glyph_width: usize,
 	pub glyph_height: usize,
@@ -18,18 +18,18 @@ pub struct Pcf<'a> {
 	pub unicode_table: Option<&'a [u8]>,
 }
 
-impl<'a> Pcf<'a> {
+impl<'a> Psf<'a> {
 	/**
-	Parse a PCF font from some bytes
+	Parse a PSF font from some bytes
 
 	See [ParseError] for possible errors.
 
-	PCF fonts may optionally have a unicode table indicating which glyphs correspond to which
+	PSF fonts may optionally have a unicode table indicating which glyphs correspond to which
 	unicode characters. This function does not validate the structure of the unicode table.
 	Errors in the encoding of the unicode table, if they can be detected, are reported by the
-	iterator returned from the [iter_unicode_entries](Pcf::iter_unicode_entries) function.
+	iterator returned from the [iter_unicode_entries](Psf::iter_unicode_entries) function.
 	*/
-	pub fn parse(data: &[u8]) -> Result<Pcf, ParseError> {
+	pub fn parse(data: &[u8]) -> Result<Psf, ParseError> {
 		use ParseError::*;
 
 		if data.len() < 32 {
@@ -67,7 +67,7 @@ impl<'a> Pcf<'a> {
 				None
 			};
 
-		let pcf = Pcf {
+		let psf = Psf {
 			glyph_byte_length: glyph_byte_length,
 			glyph_width: glyph_width,
 			glyph_height: glyph_height,
@@ -75,16 +75,16 @@ impl<'a> Pcf<'a> {
 			unicode_table,
 		};
 
-		Ok(pcf)
+		Ok(psf)
 	}
 
 	/// Get the bits corresponding to the glyph's bitmap
 	///
-	/// PCF stores the bitmap as packed bits. Each byte in the slice contains
+	/// PSF stores the bitmap as packed bits. Each byte in the slice contains
 	/// eight pixels, with the last byte of each row containing padding bits
 	/// so that the next row starts on a byte boundary.
 	///
-	/// You might be looking for [get_glyph_pixels](Pcf::get_glyph_pixels) instead, which unpacks
+	/// You might be looking for [get_glyph_pixels](Psf::get_glyph_pixels) instead, which unpacks
 	/// the bits for you.
 	pub fn get_glyph_bits(&self, glyph_index: usize) -> Option<&[u8]> {
 		let start = self.glyph_byte_length * glyph_index;
@@ -95,13 +95,13 @@ impl<'a> Pcf<'a> {
 	/**
 	Get the pixels that correspond to the given glyph's bitmap
 
-	PCF stores bitmaps in the packed bits of each byte.
+	PSF stores bitmaps in the packed bits of each byte.
 	This iterator unpacks the bits, returning a boolean for each pixel in the bitmap indicating
 	whether that pixel is lit or not.
 
-	PCF stores ASCII glyphs in the corresponding index, so you can retrieve ASCII glyphs directly
+	PSF stores ASCII glyphs in the corresponding index, so you can retrieve ASCII glyphs directly
 	by calling `get_glyph_pixels(b'a' as usize)`. Unicode characters must be looked up with
-	(iter_unicode_entries)[Pcf::iter_unicode_entries].
+	(iter_unicode_entries)[Psf::iter_unicode_entries].
 	*/
 	pub fn get_glyph_pixels<'b>(&'b self, glyph_index: usize) -> Option<impl Iterator<Item=bool> + 'b> {
 		let glyph_bits = self.get_glyph_bits(glyph_index)?;
@@ -124,7 +124,7 @@ impl<'a> Pcf<'a> {
 	/**
 	Iterate over the entries in the unicode table
 
-	PCF fonts may optionally include a unicode table indicating which unicode character each glyph corresponds to.
+	PSF fonts may optionally include a unicode table indicating which unicode character each glyph corresponds to.
 	If such a table exists, this function returns an iterator that will yield each unicode entry along with the
 	index of the glyph that represents to it.
 
@@ -137,7 +137,7 @@ impl<'a> Pcf<'a> {
 	character to glyph index pairs.
 
 	```rust(ignore)
-	let glyph_lookup_table = pcf.iter_unicode_entries().unwrap()
+	let glyph_lookup_table = psf.iter_unicode_entries().unwrap()
 		.filter_map(|(index, result)| result.ok().map(|character| (character, index)))
 		.collect::<std::collections::HashMap<&str, usize>>();
 	```
@@ -156,20 +156,20 @@ impl<'a> Pcf<'a> {
 }
 
 
-/// Possible errors returned by the [Pcf::parse] function.
+/// Possible errors returned by the [Psf::parse] function.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ParseError {
-	/// The provided buffer is not large enough to contain the PCF header.
+	/// The provided buffer is not large enough to contain the PSF header.
 	HeaderMissing,
 
-	/// The PCF header does not contain 72 b5 4a 86 as its first four bytes.
+	/// The PSF header does not contain 72 b5 4a 86 as its first four bytes.
 	InvalidMagicBytes,
 
-	/// The PCF header contains a version other than 0.
+	/// The PSF header contains a version other than 0.
 	/// (0 is the only version that exists as of writing)
 	UnknownVersion(u32),
 
 	/// The provided buffer is not large enough to contain all of the glyphs
-	/// that the PCF header indicated that it should.
+	/// that the PSF header indicated that it should.
 	GlyphTableTruncated { expected_byte_count: usize, },
 }

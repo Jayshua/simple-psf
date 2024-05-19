@@ -1,10 +1,10 @@
 [package]
-name = "simple-pcf"
+name = "simple-psf"
 version = "0.1.1"
 edition = "2021"
 license = "MIT"
 authors = ["Jayshua Nelson <me@jayshuanelson.com>"]
-repository = "https://github.com/Jayshua/simple-pcf"
-description = "A simple library for parsing PCF bitmap font files."
+repository = "https://github.com/Jayshua/simple-psf"
+description = "A simple library for parsing PSF bitmap font files."
 
 [dependencies]
