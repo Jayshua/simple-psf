@@ -18,6 +18,7 @@ pub struct Psf<'a> {
 	pub unicode_table: Option<&'a [u8]>,
 }
 
+
 impl<'a> Psf<'a> {
 	/**
 	Parse a PSF font from some bytes
@@ -28,22 +29,25 @@ impl<'a> Psf<'a> {
 	unicode characters. This function does not validate the structure of the unicode table.
 	Errors in the encoding of the unicode table, if they can be detected, are reported by the
 	iterator returned from the [iter_unicode_entries](Psf::iter_unicode_entries) function.
+
+	This function is const making it possible to parse a Psf font at compile time
+	directly into a constant.
 	*/
-	pub fn parse(data: &[u8]) -> Result<Psf, ParseError> {
+	pub const fn parse(data: &[u8]) -> Result<Psf, ParseError> {
 		if data.len() < 32 {
 			return Err(ParseError::HeaderMissing);
 		}
 
-		if &data[0..4] == &[0x72, 0xb5, 0x4a, 0x86] {
+		if u32_at(data, 0) == 0x864ab572 {
 			Self::parse_psf2(data)
-		} else if &data[0..2] == &[0x36, 0x04] {
+		} else if u32_at(data, 0) & 0xffff == 0x0436 {
 			Self::parse_psf1(data)
 		} else {
 			Err(ParseError::InvalidMagicBytes)
 		}
 	}
 
-	fn parse_psf1(data: &[u8]) -> Result<Psf, ParseError> {
+	const fn parse_psf1(data: &[u8]) -> Result<Psf, ParseError> {
 		let mode = data[2];
 		let has_512_glyphs = 0 != (mode & 0x1);
 		let has_unicode_table = 0 != (mode & 0x2);
@@ -57,42 +61,52 @@ impl<'a> Psf<'a> {
 
 		let glyph_height = data[3] as usize;
 
+		let glyphs = slice_len(data, 4, glyph_count * glyph_height);
+
+		let unicode_entries =
+			if has_unicode_table {
+				let (unicode_entries, _) = data.split_at(4 + glyph_count * glyph_height);
+				Some(unicode_entries)
+			} else {
+				None
+			};
+
 		let psf =
 			Psf {
 				glyph_byte_length: glyph_height,
 				glyph_width: 8,
 				glyph_height: glyph_height,
-				glyphs: &data[4..][..glyph_count * glyph_height],
-				unicode_table: None,
+				glyphs: glyphs,
+				unicode_table: unicode_entries,
 			};
 
 		Ok(psf)
 	}
 
-	fn parse_psf2(data: &[u8]) -> Result<Psf, ParseError> {
-		let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
+	const fn parse_psf2(data: &[u8]) -> Result<Psf, ParseError> {
+		let version = u32_at(data, 4);
 		if 0 != version {
 			return Err(ParseError::UnknownVersion(version));
 		}
 
-		let header_size = u32::from_le_bytes(data[8..12].try_into().unwrap()) as usize;
-		let flags = u32::from_le_bytes(data[12..16].try_into().unwrap());
+		let header_size = u32_at(data, 8) as usize;
+		let flags = u32_at(data, 12);
 		let has_unicode_table = 1 == (flags & 0x00000001);
-		let glyph_count = u32::from_le_bytes(data[16..20].try_into().unwrap()) as usize;
-		let glyph_byte_length = u32::from_le_bytes(data[20..24].try_into().unwrap()) as usize;
-		let glyph_height = u32::from_le_bytes(data[24..28].try_into().unwrap()) as usize;
-		let glyph_width = u32::from_le_bytes(data[28..32].try_into().unwrap()) as usize;
+		let glyph_count = u32_at(data, 16) as usize;
+		let glyph_byte_length = u32_at(data, 20) as usize;
+		let glyph_height = u32_at(data, 24) as usize;
+		let glyph_width = u32_at(data, 28) as usize;
 
 		let expected_byte_count = header_size + (glyph_count * glyph_byte_length);
 		if data.len() < expected_byte_count {
 			return Err(ParseError::GlyphTableTruncated { expected_byte_count: expected_byte_count });
 		}
 
-		let glyphs = &data[header_size..][..glyph_byte_length * glyph_count];
+		let glyphs = slice_len(data, header_size, glyph_byte_length * glyph_count);
 
 		let unicode_table =
 			if has_unicode_table {
-				Some(&data[expected_byte_count..])
+				Some(data.split_at(expected_byte_count).1)
 			} else {
 				None
 			};
@@ -202,4 +216,18 @@ pub enum ParseError {
 	/// The provided buffer is not large enough to contain all of the glyphs
 	/// that the PSF header indicated that it should.
 	GlyphTableTruncated { expected_byte_count: usize, },
+}
+
+
+// Same as &data[start..][..len], but const
+const fn slice_len(data: &[u8], start: usize, len: usize) -> &[u8] {
+	let (_, rest) = data.split_at(start);
+	let (segment, _) = rest.split_at(len);
+	segment
+}
+
+// Same as u32::from_le_bytes(data[at..][..4].try_into().unwrap()), but const
+const fn u32_at(data: &[u8], at: usize) -> u32 {
+	let bytes = slice_len(data, at, 4);
+	u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
 }
