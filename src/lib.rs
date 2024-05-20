@@ -30,19 +30,49 @@ impl<'a> Psf<'a> {
 	iterator returned from the [iter_unicode_entries](Psf::iter_unicode_entries) function.
 	*/
 	pub fn parse(data: &[u8]) -> Result<Psf, ParseError> {
-		use ParseError::*;
-
 		if data.len() < 32 {
-			return Err(HeaderMissing);
+			return Err(ParseError::HeaderMissing);
 		}
 
-		if &data[0..4] != &[0x72, 0xb5, 0x4a, 0x86] {
-			return Err(InvalidMagicBytes);
+		if &data[0..4] == &[0x72, 0xb5, 0x4a, 0x86] {
+			Self::parse_psf2(data)
+		} else if &data[0..2] == &[0x36, 0x04] {
+			Self::parse_psf1(data)
+		} else {
+			Err(ParseError::InvalidMagicBytes)
 		}
+	}
 
+	fn parse_psf1(data: &[u8]) -> Result<Psf, ParseError> {
+		let mode = data[2];
+		let has_512_glyphs = 0 != (mode & 0x1);
+		let has_unicode_table = 0 != (mode & 0x2);
+
+		let glyph_count =
+			if has_512_glyphs {
+				256
+			} else {
+				512
+			};
+
+		let glyph_height = data[3] as usize;
+
+		let psf =
+			Psf {
+				glyph_byte_length: glyph_height,
+				glyph_width: 8,
+				glyph_height: glyph_height,
+				glyphs: &data[4..][..glyph_count * glyph_height],
+				unicode_table: None,
+			};
+
+		Ok(psf)
+	}
+
+	fn parse_psf2(data: &[u8]) -> Result<Psf, ParseError> {
 		let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
 		if 0 != version {
-			return Err(UnknownVersion(version));
+			return Err(ParseError::UnknownVersion(version));
 		}
 
 		let header_size = u32::from_le_bytes(data[8..12].try_into().unwrap()) as usize;
@@ -55,7 +85,7 @@ impl<'a> Psf<'a> {
 
 		let expected_byte_count = header_size + (glyph_count * glyph_byte_length);
 		if data.len() < expected_byte_count {
-			return Err(GlyphTableTruncated { expected_byte_count: expected_byte_count });
+			return Err(ParseError::GlyphTableTruncated { expected_byte_count: expected_byte_count });
 		}
 
 		let glyphs = &data[header_size..][..glyph_byte_length * glyph_count];
@@ -105,7 +135,7 @@ impl<'a> Psf<'a> {
 	*/
 	pub fn get_glyph_pixels<'b>(&'b self, glyph_index: usize) -> Option<impl Iterator<Item=bool> + 'b> {
 		let glyph_bits = self.get_glyph_bits(glyph_index)?;
-		let bytes_per_row = (self.glyph_width / 8) + 1;
+		let bytes_per_row = (self.glyph_width + 7) / 8;
 
 		let iterator =
 			(0..self.glyph_height).flat_map(move |y| {
